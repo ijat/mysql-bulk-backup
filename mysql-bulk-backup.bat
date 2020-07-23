@@ -1,5 +1,7 @@
 @echo off
 
+REM To backup specific databases, create a text file containing database name list seperated by new line. (e.g. list.txt)
+REM Then run mysql-bulk-backup.bat list.txt
 REM Edit as required
 
 set db_host="localhost"
@@ -8,8 +10,20 @@ set db_pass=""
 
 set mysql_path="C:\xampp\mysql\bin\mysql.exe"
 set mysqldump_path="C:\xampp\mysql\bin\mysqldump.exe"
-set log_path=".\logs"
-set backup_path=".\backups"
+set log_path=.\logs
+set backup_path=.\backups
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -18,6 +32,7 @@ REM Internal codes below, do not edit
 set db_list=_temp.txt
 set /A index_value=0
 set /A skip_value=0
+set /A error_count=0
 
 if not exist %log_path% mkdir %log_path%
 if not exist %backup_path% mkdir %backup_path%
@@ -42,7 +57,11 @@ if not %db_pass% == "" set mysql_params=%mysql_params% -p%db_pass%
 set mysql_params=%mysql_params% -e"Show databases;"
 
 CALL :log "Getting databases to _temp.txt"
+echo Please wait...
+rem CALL :log "Mysql params: %mysql_params%
 %mysql_path% %mysql_params% > _temp.txt
+CALL :check_exit_code
+echo.
 
 rem Start backing up...
 
@@ -54,8 +73,11 @@ if not [%1]==[] (
 )
 for /F "tokens=*" %%A in (%db_list%) do CALL :backup_db %%A
 
-set /A total_value=%index_value%-%skip_value%
-echo Total %total_value% databases dumped!
+set /A total_value=%index_value%-%skip_value%-%error_count%
+set /A total_db=%index_value%-%skip_value%
+echo Total databases = %total_db%
+echo Total success = %total_value%
+echo Total error = %error_count%
 echo.
 
 set /p DUMMY=Press ENTER to exit...
@@ -63,6 +85,16 @@ CALL :log "Deleting _temp.txt"
 if exist _temp.txt del _temp.txt
 CALL :log "END-OF-SCRIPT"
 exit
+
+:check_exit_code
+if %errorlevel% == 0 (
+	echo  - OK
+) else (
+	echo - ERROR! Check log at %log_path%\%mydate%.txt
+	set /A error_count=%error_count%+1
+)
+CALL :log "Exit code: %errorlevel%"
+EXIT /B 0
 
 :blacklist_db 
 rem https://dba.stackexchange.com/questions/101292/need-for-backing-up-mysql-databases-information-schema-performance-schema-mysq
@@ -95,17 +127,18 @@ if %out% == "SKIP" (
 CALL :log "Processing %~1..."
 echo [DUMP] %~1...
 
-echo.
-
 set mysqldump_params=
 if not %db_host% == "" set mysqldump_params=%mysqldump_params% -h %db_host%
 if not %db_user% == "" set mysqldump_params=%mysqldump_params% -u %db_user%
 if not %db_pass% == "" set mysqldump_params=%mysqldump_params% -p%db_pass%
-set mysqldump_params=%mysqldump_params% %~1
+set mysqldump_params=%mysqldump_params% --quick %~1
 
 CALL :update_time
 if not exist %backup_path%\%mydate% mkdir %backup_path%\%mydate%
-%mysqldump_path%%mysqldump_params% > %backup_path%\%mydate%\%~1.sql
+rem CALL :log "Mysqldump params: %mysql_params%"
+%mysqldump_path%%mysqldump_params% > %backup_path%\%mydate%\%~1.sql 2>> "%log_path%\%mydate%.txt"
+CALL :check_exit_code
+echo.
 EXIT /B 0
 
 :update_time
